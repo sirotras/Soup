@@ -1,2 +1,5 @@
 #Ignore output file
 output.txt
+output2.txt
+#Ignore log file
+test.log

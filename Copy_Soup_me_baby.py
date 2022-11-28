@@ -1,11 +1,10 @@
-#from .models import Run_data, Event,Best_run_data, Run_notes
+
 from bs4 import BeautifulSoup
 from fuzzywuzzy import fuzz
 import requests
 import logging
 import re
 import os
-import datetime
 
 def main():
     #%(asctime)s:%(levelname)s:
@@ -45,11 +44,10 @@ def main():
                 
 
     # start reading in files to prepare to compare
-    #must be absolute path
-    #import os /os.getcwd()
-    dir_list = os.listdir(path='C:\\Users\\BlahKyle\\Documents\\IT391Proj\\DjangoApp\\autocross\\management\\commands\\files\\')
+    dir_list = os.listdir(path='files/')
     indexx = 0
-    dir_length = len(dir_list)    
+    dir_length = len(dir_list)
+    my_file2 = open('output2.txt','w')
     while indexx < dir_length:
         curr_path = dir_list[indexx]
         k_index = indexx + 1
@@ -87,67 +85,63 @@ def main():
                 fin_path = path
         raw_data_list = read_files(raw_path)
         pax_data_list = read_files(pax_path)
-        #fin_data_list = []        
-
-        #Creating an event instance into the database
-        datelist=raw_data_list[1][0].split('-')
-        month = int(datelist[0])
-        day =  int(datelist[1])
-        year = int(datelist[2])
-        event_date = datetime.date(year,month,day)
-        '''
-        event_instance = Event(date=event_date,location=raw_data_list[0][0], name = raw_data_list[2][0])
-        event_instance.save()
-        '''        
-        
+        #fin_data_list = []
+        total_data = []
+        total_data.append(raw_data_list[0]) #location
+        total_data.append(raw_data_list[1]) #date
+        total_data.append(raw_data_list[2]) #event name
+        #print(raw_data_list[2])
         #Start comparing files
         #name index 4 for pax
-        #name index 4 for raw        
-        for index in range(3,len(raw_data_list)):
+        #name index 4 for raw
+        
+        for index in range(3,len(raw_data_list)):            
             raw_name = raw_data_list[index][4].lower()
             ratio_limit = 90
             pindex = 3
             while pindex < len(pax_data_list):
                 pax_name = pax_data_list[pindex][4].lower()
                 ratio = fuzz.ratio(raw_name,pax_name)
-                if ratio > ratio_limit:                                        
-                    #Create Run data instance
+                if ratio > ratio_limit:
+                    #Event Data                    
+                    #Run data
                     class_name = raw_data_list[index][2]
                     car_num = raw_data_list[index][3]
                     driver_name = raw_data_list[index][4]
                     car_model = raw_data_list[index][5]
                     time = raw_data_list[index][6]
                     cones_hit = -1
-                    '''
-                    run_data_instance = Run_data(class_name=class_name,car_num = int(car_num),driver_name=driver_name,car_model = car_model,
-                                                    time=time,cones_hit=int(cones_hit),event_id =event_instance)
-                    run_data_instance.save()
-                    '''
-
-                    #Create Best Run Data instance                   
+                    event_id = -1
+                    #Best Run Data
+                    run_id = -1
                     raw_class_position = raw_data_list[index][1]
                     pax_class_position = pax_data_list[pindex][1]
-                    pax_time = pax_data_list[pindex][8]                    
-                    '''
-                    best_run_data_instance = Best_run_data(run_id=run_data_instance, raw_class_position= int(raw_class_position), pax_class_position=int(pax_class_position),
-                                                            pax_time=pax_time)                    
-                    best_run_data_instance.save()
-                    '''
+                    pax_time = pax_data_list[pindex][8]
+                    note_id = -1
+                    row_list = [class_name, car_num, driver_name, car_model, time, cones_hit,
+                                        event_id, run_id, raw_class_position, pax_class_position,
+                                        pax_time, note_id,pax_name]
+                    total_data.append(row_list)
                     pindex= len(pax_data_list)+1
                 else:
                     if pindex == len(pax_data_list) -1:
                         pindex = 2
                         ratio_limit = ratio_limit -5
-                pindex+=1       
-    
+                pindex+=1
+        for line in total_data:
+            for word in line:
+                my_file2.write(str(word) + '|')
+            my_file2.write('\n')
+        my_file2.write('--------------------------------------------------------------------------------\n')   
+        #my_file2.close()
+        #break
+    my_file2.close()
     # end of while loop
 
 def read_files(path):
     '''Reads file line by line, splits the string
     , returns a list of lists of stripped strings'''
-    #must be absolute path
-    #import os /os.getcwd()
-    my_file = open('C:\\Users\\BlahKyle\\Documents\\IT391Proj\\DjangoApp\\autocross\\management\\commands\\files\\'+path,'r')
+    my_file = open('files/'+path,'r')
     lines = my_file.readlines()
     data_list =  []
     for line in lines:
@@ -163,9 +157,7 @@ def write_to_files(num_fields, location, url):
     /  writes table contents of url to files'''
     #get file name and open a file
     filename = get_filename(url).lower()
-    #must be absolute path
-    #import os /os.getcwd()
-    my_file = open('C:\\Users\\BlahKyle\\Documents\\IT391Proj\\DjangoApp\\autocross\\management\\commands\\files\\'+filename+'.txt', 'w') 
+    my_file = open('files/'+filename+'.txt', 'w') 
     #soup it up
     new_page = requests.get(url)
     new_soup = BeautifulSoup(new_page.text, 'html.parser')
