@@ -5,15 +5,147 @@ import requests
 import logging
 import re
 import os
+import time
 
 def main():    
     #logging file
     logging.basicConfig(filename='test.log', level = logging.DEBUG,
                         format='%(message)s')
     logging.debug('start')
-
+    #2021 = 18 events
+    #2020 = 12 events
+    #2022 = 15 events as of 11/8
     current_results_url = 'https://ccsportscarclub.org/autocross/schedule/'
-    page = requests.get(current_results_url)
+    pages = ['https://ccsportscarclub.org/autocross/schedule/pastresults/2020-autocross-season/','https://ccsportscarclub.org/autocross/schedule/pastresults/2021-autocross-results/']
+    for page in pages:
+        get_data(page)
+    print('Old Data imported')
+    while True:
+        get_data(current_results_url)
+        print('fetched most recent results') 
+        time.sleep(5) 
+        print('After sleep')       
+        break
+
+
+def read_files(path):
+    '''Reads file line by line, splits the string
+    , returns a list of lists of stripped strings'''
+    logging.debug(path)
+    my_file = open('files/'+path,'r',encoding="utf-8")
+    lines = my_file.readlines()
+    data_list =  []
+    for line in lines:
+        newLine = re.split(r"[\n|]", line)
+        data_list.append(newLine)
+    my_file.close()
+    return data_list
+    
+
+
+def write_to_files(num_fields, location, url):
+    '''Takes in the number of data fields, a location, and a URL
+    /  writes table contents of url to files'''
+    #get file name and open a file
+    filename = get_filename(url).lower()
+    my_file = open('files/'+filename+'.txt', 'w',encoding="utf-8") 
+    #soup it up
+    new_page = requests.get(url)
+    new_soup = BeautifulSoup(new_page.text, 'html.parser')
+
+    #get event name
+    event_name = ""
+    f_list = filename.split('-')
+    for word in f_list:
+        if True in [char.isdigit() for char in word]:
+            pass
+        else:
+            event_name += word+' '
+    # get date Only works with 2022 results
+    date= re.findall(r'\d+', filename)
+    date = '-'.join(date)
+       
+    #find all table data
+    td_find = new_soup.find_all('td')
+
+    #writing to file intervals of num_fields 
+    my_file.write(location.strip() + '\n') 
+    my_file.write(date + '\n')
+    my_file.write(event_name + '\n')   
+    count = 1
+    for td in td_find:
+        if count % num_fields == 0:
+            #td_list.append('\n')
+            my_file.write(td.text+'|\n')
+        else:
+            my_file.write(td.text+'|')
+        count += 1
+    my_file.close()
+
+def write_to_file_fin(url):
+    '''Takes a location and url to write the final data'''
+        #get file name and open a file
+    filename = get_filename(url).lower()
+    my_file = open('files/'+filename+'.txt', 'w',encoding="utf-8") 
+    #soup it up
+    new_page = requests.get(url)
+    new_soup = BeautifulSoup(new_page.text, 'html.parser')
+
+    #get event name
+    event_name = ""
+    f_list = filename.split('-')
+    for word in f_list:
+        if True in [char.isdigit() for char in word]:
+            pass
+        else:
+            event_name += word+' '
+    # get date Only works with 2022 results
+    date= re.findall(r'\d+', filename)
+    date = '-'.join(date)
+
+    my_file.write('Location\n')
+    my_file.write('Date\n')
+    my_file.write('Event\n')
+    table_lists = new_soup.find_all('table')    
+    tr_list = table_lists[2].find_all('tr')
+    for tr in tr_list:
+        td_list = tr.find_all('td')
+        if len(td_list) > 0:
+            for td in td_list:
+                my_file.write(td.text+'|')
+            my_file.write('\n')
+    my_file.close()
+        
+
+def delete_tags(taglist):
+    '''Takes a list of <a> tagged urls
+   returns a non tagged list aka just the url
+    '''
+    no_taglist = []
+    for urls in taglist:
+        if urls['href'].find('files') != -1 or urls['href'].find('msreg') != -1:
+            no_taglist.append(urls['href'])
+
+    return no_taglist
+
+def get_filename(url):
+    '''Takes a url and extracts the filename'''
+    split_list = url.split('/')
+    a = split_list[-1]
+    split_list = a.split('.')
+    filename = split_list[0]
+    return filename
+
+def is_float(n):
+    '''Determines if input n is a float'''
+    try:
+        float(n)
+        return True
+    except ValueError:
+        return False
+
+def get_data(page_url):
+    page = requests.get(page_url)
     soup = BeautifulSoup(page.text, 'html.parser')
 
     #get a list of all links on the web page    
@@ -38,7 +170,7 @@ def main():
         #gets final data
         if url_notag_list[i].find('_fin') != -1:
             if url_notag_list[i].lower().find('-pro') == -1:                
-                write_to_file_fin(location, url_notag_list[i])
+                write_to_file_fin(url_notag_list[i])
             
 
         #gets location
@@ -53,7 +185,7 @@ def main():
     dir_list = os.listdir(path='files/')
     indexx = 0
     dir_length = len(dir_list)
-    my_file2 = open('output2.txt','w')
+    my_file2 = open('output2.txt','w',encoding="utf-8")
     while indexx < dir_length:
         curr_path = dir_list[indexx]
         k_index = indexx + 1
@@ -67,12 +199,15 @@ def main():
         filePathList = []
         #holds the index of the last file found k
         k_holder = 0
-
+        #finds all files with the same sub path assigns
+        #files are grouped by their event        
         while k_index < dir_length:
             if dir_list[k_index].find(sub_path) != -1:
                 filePathList.append(dir_list[k_index])
                 k_holder = k_index
             k_index += 1
+        #If no files are found indexx gets incremented
+        #if some files are found, indexx is incremented from k_holder(index of last file found) + 1
         if k_holder == 0:
             indexx+=1
         else:
@@ -82,6 +217,7 @@ def main():
         pax_path = ""
         fin_path = ""
         filePathList.append(curr_path)
+        #loops through filepathlist to get path for raw, pax and fin data
         for path in filePathList:
             if path.find('_raw') != -1:
                 raw_path = path
@@ -89,21 +225,23 @@ def main():
                 pax_path = path
             if path.find('_fin') != -1:
                 fin_path = path
-               
+        #reads the files into lists      
         raw_data_list = read_files(raw_path)        
         pax_data_list = read_files(pax_path)        
         fin_data_list = read_files(fin_path)        
-        
+        #creates a list that holds the pax,raw,and fin data we need
         total_data = []
         total_data.append(raw_data_list[0]) #location
         total_data.append(raw_data_list[1]) #date
         total_data.append(raw_data_list[2]) #event name        
         logging.debug(raw_data_list[2])
 
-        #Start comparing files
+        
         #name index 4 for pax
         #name index 4 for raw
-        #name index 3 for fin        
+        #name index 3 for fin
+        #Start comparing files, finding a match of raw to the pax data and raw to the fin data
+        #When found, we insert data into a list/database        
         for index in range(3,len(raw_data_list)):
             #logging.debug(index)
             raw_name = raw_data_list[index][4].lower()
@@ -113,6 +251,7 @@ def main():
             fin_index_holder = -1
             findex = 3
             logging.debug('Finding pindex Holder')
+            #finding the pax match
             while pindex < len(pax_data_list):
                 pax_name = pax_data_list[pindex][4].lower()
                 ratio = fuzz.ratio(raw_name,pax_name)
@@ -128,6 +267,7 @@ def main():
                 pindex+=1
             fin_ratio_limit = 90
             logging.debug('finding fin index holder')
+            #finding the fin match
             while findex < len(fin_data_list):
                 fin_name = fin_data_list[findex][3].lower()
                 ratio = fuzz.ratio(raw_name,fin_name)
@@ -157,7 +297,7 @@ def main():
             pax_class_position = pax_data_list[pax_index_holder][1]
             pax_time = pax_data_list[pax_index_holder][8]
             note_id = "NoteID"
-
+            #getting final values of run and best run data
             cones_hit_event = 0
             total_time = 0
             #vars to get three run avg
@@ -165,7 +305,8 @@ def main():
             dnf = False
             three_run_sum = 0
             three_run_avg = "N/A"
-            #getting cones hit for best run, cones hit total for event, and three run avg               
+            #getting cones hit for best run, cones hit total for event, and three run avg  
+            #if raw time is a float and a fin match was found             
             if is_float(raw_time) == True and fin_index_holder != -1:
                 fin_run_list = fin_data_list[fin_index_holder][6:-2]
                 for time in fin_run_list:
@@ -225,122 +366,6 @@ def main():
         #break
     my_file2.close()
     # end of while loop
-
-def read_files(path):
-    '''Reads file line by line, splits the string
-    , returns a list of lists of stripped strings'''
-    logging.debug(path)
-    my_file = open('files/'+path,'r')
-    lines = my_file.readlines()
-    data_list =  []
-    for line in lines:
-        newLine = re.split(r"[\n|]", line)
-        data_list.append(newLine)
-    my_file.close()
-    return data_list
-    
-
-
-def write_to_files(num_fields, location, url):
-    '''Takes in the number of data fields, a location, and a URL
-    /  writes table contents of url to files'''
-    #get file name and open a file
-    filename = get_filename(url).lower()
-    my_file = open('files/'+filename+'.txt', 'w') 
-    #soup it up
-    new_page = requests.get(url)
-    new_soup = BeautifulSoup(new_page.text, 'html.parser')
-
-    #get event name
-    event_name = ""
-    f_list = filename.split('-')
-    for word in f_list:
-        if True in [char.isdigit() for char in word]:
-            pass
-        else:
-            event_name += word+' '
-    # get date Only works with 2022 results
-    date= re.findall(r'\d+', filename)
-    date = '-'.join(date)
-       
-    #find all table data
-    td_find = new_soup.find_all('td')
-
-    #writing to file intervals of num_fields 
-    my_file.write(location.strip() + '\n') 
-    my_file.write(date + '\n')
-    my_file.write(event_name + '\n')   
-    count = 1
-    for td in td_find:
-        if count % num_fields == 0:
-            #td_list.append('\n')
-            my_file.write(td.text+'|\n')
-        else:
-            my_file.write(td.text+'|')
-        count += 1
-    my_file.close()
-
-def write_to_file_fin(location, url):
-    '''Takes a location and url to write the final data'''
-        #get file name and open a file
-    filename = get_filename(url).lower()
-    my_file = open('files/'+filename+'.txt', 'w') 
-    #soup it up
-    new_page = requests.get(url)
-    new_soup = BeautifulSoup(new_page.text, 'html.parser')
-
-    #get event name
-    event_name = ""
-    f_list = filename.split('-')
-    for word in f_list:
-        if True in [char.isdigit() for char in word]:
-            pass
-        else:
-            event_name += word+' '
-    # get date Only works with 2022 results
-    date= re.findall(r'\d+', filename)
-    date = '-'.join(date)
-
-    my_file.write('Location\n')
-    my_file.write('Date\n')
-    my_file.write('Event\n')
-    table_lists = new_soup.find_all('table')    
-    tr_list = table_lists[2].find_all('tr')
-    for tr in tr_list:
-        td_list = tr.find_all('td')
-        if len(td_list) > 0:
-            for td in td_list:
-                my_file.write(td.text+'|')
-            my_file.write('\n')
-    my_file.close()
-        
-
-def delete_tags(taglist):
-    '''Takes a list of <a> tagged urls
-   returns a non tagged list aka just the url
-    '''
-    no_taglist = []
-    for urls in taglist:
-        if urls['href'].find('files') != -1 or urls['href'].find('msreg') != -1:
-            no_taglist.append(urls['href'])
-
-    return no_taglist
-
-def get_filename(url):
-    '''Takes a url and extracts the filename'''
-    split_list = url.split('/')
-    a = split_list[-1]
-    split_list = a.split('.')
-    filename = split_list[0]
-    return filename
-
-def is_float(n):
-    '''Determines if input n is a float'''
-    try:
-        float(n)
-        return True
-    except ValueError:
-        return False
 
 if __name__ == "__main__":
     main()
