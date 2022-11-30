@@ -10,28 +10,34 @@ import time
 def main():    
     #logging file
     logging.basicConfig(filename='test.log', level = logging.DEBUG,
-                        format='%(message)s')
-    logging.debug('start')
+                        format='%(message)s')    
     #2021 = 18 events
     #2020 = 12 events
     #2022 = 15 events as of 11/8
     current_results_url = 'https://ccsportscarclub.org/autocross/schedule/'
-    pages = ['https://ccsportscarclub.org/autocross/schedule/pastresults/2020-autocross-season/','https://ccsportscarclub.org/autocross/schedule/pastresults/2021-autocross-results/']
+    pages = [
+        'https://ccsportscarclub.org/autocross/schedule/pastresults/2021-autocross-results/',
+        'https://ccsportscarclub.org/autocross/schedule/pastresults/2020-autocross-season/',
+    ]
     for page in pages:
+        logging.debug('starting: ' + page)
         get_data(page)
-    print('Old Data imported')
+        logging.debug('Finished: '+page)
+        time.sleep(2)
+    logging.debug('Old Data imported')
+    count = 0
     while True:
         get_data(current_results_url)
-        print('fetched most recent results') 
-        time.sleep(5) 
-        print('After sleep')       
-        break
+        logging.debug('fetched most recent results')
+        #will check once a day 
+        time.sleep(86_400) 
+               
+        
 
 
 def read_files(path):
     '''Reads file line by line, splits the string
-    , returns a list of lists of stripped strings'''
-    logging.debug(path)
+    , returns a list of lists of stripped strings'''    
     my_file = open('files/'+path,'r',encoding="utf-8")
     lines = my_file.readlines()
     data_list =  []
@@ -40,8 +46,6 @@ def read_files(path):
         data_list.append(newLine)
     my_file.close()
     return data_list
-    
-
 
 def write_to_files(num_fields, location, url):
     '''Takes in the number of data fields, a location, and a URL
@@ -61,11 +65,15 @@ def write_to_files(num_fields, location, url):
             pass
         else:
             event_name += word+' '
-    # get date Only works with 2022 results
-    date= re.findall(r'\d+', filename)
-    date = '-'.join(date)
+    # get date Usually stored in first table of all files
+    table_find = new_soup.find_all('table')
+    date = ""
+    if len(table_find) >= 1:
+        get_date = re.search(r'\d{2}-\d{2}-\d{4}',table_find[0].text)
+        if  get_date != None:
+            date = get_date.group()
        
-    #find all table data
+    #find all table td data
     td_find = new_soup.find_all('td')
 
     #writing to file intervals of num_fields 
@@ -84,38 +92,28 @@ def write_to_files(num_fields, location, url):
 
 def write_to_file_fin(url):
     '''Takes a location and url to write the final data'''
-        #get file name and open a file
+    #get file name and open a file
     filename = get_filename(url).lower()
     my_file = open('files/'+filename+'.txt', 'w',encoding="utf-8") 
     #soup it up
     new_page = requests.get(url)
-    new_soup = BeautifulSoup(new_page.text, 'html.parser')
-
-    #get event name
-    event_name = ""
-    f_list = filename.split('-')
-    for word in f_list:
-        if True in [char.isdigit() for char in word]:
-            pass
-        else:
-            event_name += word+' '
-    # get date Only works with 2022 results
-    date= re.findall(r'\d+', filename)
-    date = '-'.join(date)
+    new_soup = BeautifulSoup(new_page.text, 'html.parser')    
 
     my_file.write('Location\n')
     my_file.write('Date\n')
     my_file.write('Event\n')
-    table_lists = new_soup.find_all('table')    
+    #finding all tables the table we need is in index 2
+    table_lists = new_soup.find_all('table')
+    #get all tr data in the table at index 2    
     tr_list = table_lists[2].find_all('tr')
+    #loop through each tr and find all td, write data to a file
     for tr in tr_list:
         td_list = tr.find_all('td')
         if len(td_list) > 0:
             for td in td_list:
                 my_file.write(td.text+'|')
             my_file.write('\n')
-    my_file.close()
-        
+    my_file.close()       
 
 def delete_tags(taglist):
     '''Takes a list of <a> tagged urls
@@ -145,6 +143,16 @@ def is_float(n):
         return False
 
 def get_data(page_url):
+    '''
+    Takes a url, gets data using beatiful soup
+    writes the data to files
+    compares the files to find the correct matching data
+    imports to database
+    deletes files
+    urls that have been used are stored in a file
+    to track what we have done already
+    '''
+    #soup it up
     page = requests.get(page_url)
     soup = BeautifulSoup(page.text, 'html.parser')
 
@@ -158,29 +166,46 @@ def get_data(page_url):
     #writing to files
     location = ''
     length = len(url_notag_list)
+    #url_file holds the urls that have been checked before
+    #read that file into a list to check agaisnt
+    file_exists = os.path.exists('url_used_list.txt')
+    url_used_list = []
+    if file_exists:
+        url_file = open('url_used_list.txt', 'r')
+        for url in url_file:
+            url_split = url.split('\n')
+            url_used_list.append(url_split[0])
+        url_file.close()         
+    #checking all urls
     for i in range(length):
-        #gets raw data
-        if url_notag_list[i].find('_raw') != -1:            
-            write_to_files(9,location, url_notag_list[i])
+        if url_notag_list[i] not in url_used_list:            
+            #gets raw data
+            if url_notag_list[i].find('_raw') != -1:            
+                write_to_files(9,location, url_notag_list[i])
+                url_used_list.append(url_notag_list[i])
 
-        #gets pax data           
-        if url_notag_list[i].find('_pax') != -1:            
-            write_to_files(11,location, url_notag_list[i])
+            #gets pax data           
+            if url_notag_list[i].find('_pax') != -1:            
+                write_to_files(11,location, url_notag_list[i])
+                url_used_list.append(url_notag_list[i])
 
-        #gets final data
-        if url_notag_list[i].find('_fin') != -1:
-            if url_notag_list[i].lower().find('-pro') == -1:                
-                write_to_file_fin(url_notag_list[i])
-            
+            #gets final data
+            if url_notag_list[i].find('_fin') != -1:
+                url_used_list.append(url_notag_list[i])
+                if url_notag_list[i].lower().find('-pro') == -1:                
+                    write_to_file_fin(url_notag_list[i])            
 
-        #gets location
-        if url_notag_list[i].find('msreg') != -1:
-            if (length - i) > 1:            
-                new_page = requests.get(url_notag_list[i])
-                new_soup = BeautifulSoup(new_page.text, 'html.parser')
-                location = new_soup.find('div',{'class':'section__description section__description_s'}).text
-                
-
+            #gets location
+            if url_notag_list[i].find('msreg') != -1:
+                if (length - i) > 1:            
+                    new_page = requests.get(url_notag_list[i])
+                    new_soup = BeautifulSoup(new_page.text, 'html.parser')
+                    location = new_soup.find('div',{'class':'section__description section__description_s'}).text
+    #updating the file with all the past and new urls          
+    url_file = open('url_used_list.txt', 'w')
+    for url in url_used_list:
+        url_file.write(url+'\n')
+    url_file.close()
     # start reading in files to prepare to compare
     dir_list = os.listdir(path='files/')
     indexx = 0
@@ -217,7 +242,7 @@ def get_data(page_url):
         pax_path = ""
         fin_path = ""
         filePathList.append(curr_path)
-        #loops through filepathlist to get path for raw, pax and fin data
+        #loops through filepathlist to get path for raw, pax, and fin data
         for path in filePathList:
             if path.find('_raw') != -1:
                 raw_path = path
@@ -232,25 +257,25 @@ def get_data(page_url):
         #creates a list that holds the pax,raw,and fin data we need
         total_data = []
         total_data.append(raw_data_list[0]) #location
-        total_data.append(raw_data_list[1]) #date
+        #one file doesn't have the date in the usual place, use the pax file instead
+        if raw_data_list[1][0] == "":
+            total_data.append(pax_data_list[1]) #date
+        else:
+            total_data.append(raw_data_list[1]) #date
         total_data.append(raw_data_list[2]) #event name        
-        logging.debug(raw_data_list[2])
-
-        
+                
         #name index 4 for pax
         #name index 4 for raw
         #name index 3 for fin
         #Start comparing files, finding a match of raw to the pax data and raw to the fin data
         #When found, we insert data into a list/database        
-        for index in range(3,len(raw_data_list)):
-            #logging.debug(index)
+        for index in range(3,len(raw_data_list)):            
             raw_name = raw_data_list[index][4].lower()
             ratio_limit = 90
             pindex = 3
             pax_index_holder = -1
             fin_index_holder = -1
-            findex = 3
-            logging.debug('Finding pindex Holder')
+            findex = 3            
             #finding the pax match
             while pindex < len(pax_data_list):
                 pax_name = pax_data_list[pindex][4].lower()
@@ -265,8 +290,7 @@ def get_data(page_url):
                         pindex = 3
                         ratio_limit = ratio_limit -1
                 pindex+=1
-            fin_ratio_limit = 90
-            logging.debug('finding fin index holder')
+            fin_ratio_limit = 90            
             #finding the fin match
             while findex < len(fin_data_list):
                 fin_name = fin_data_list[findex][3].lower()
@@ -281,7 +305,7 @@ def get_data(page_url):
                         findex = 3
                         fin_ratio_limit = fin_ratio_limit -1
                 findex+=1
-            logging.debug("fin FOund")
+            
             #EventData
             #Run Data
             class_name = raw_data_list[index][2]
@@ -296,6 +320,10 @@ def get_data(page_url):
             raw_class_position = raw_data_list[index][1]
             pax_class_position = pax_data_list[pax_index_holder][1]
             pax_time = pax_data_list[pax_index_holder][8]
+            raw_diff_succesor = raw_data_list[index][7]
+            raw_diff_first = raw_data_list[index][8]
+            pax_diff_succesor = pax_data_list[pax_index_holder][9]
+            pax_diff_first = pax_data_list[pax_index_holder][10]
             note_id = "NoteID"
             #getting final values of run and best run data
             cones_hit_event = 0
@@ -351,12 +379,11 @@ def get_data(page_url):
                 fin_name = "NoFinName"
 
             pax_name = pax_data_list[pax_index_holder][4].lower()
-            row_list = [class_name, car_num, driver_name, car_model, raw_time, cones_hit,
+            row_list = [class_name, car_num, driver_name, car_model, raw_time, raw_diff_first, raw_diff_succesor, cones_hit,
                                         event_id, run_id, raw_class_position, pax_class_position,
-                                        pax_time, note_id,three_run_avg,pax_name,fin_name]
+                                        pax_time, pax_diff_succesor, pax_diff_first, note_id,three_run_avg,pax_name,fin_name]
             total_data.append(row_list)
-
-        logging.debug('Writing to File for ^^^')
+        
         for line in total_data:
             for word in line:
                 my_file2.write(str(word) + '|')
@@ -365,6 +392,10 @@ def get_data(page_url):
         #my_file2.close()
         #break
     my_file2.close()
+    #clean up old files
+    del_list = os.listdir(path='files/')
+    for file in del_list:
+        os.remove('files/'+file)
     # end of while loop
 
 if __name__ == "__main__":
