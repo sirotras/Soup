@@ -307,6 +307,11 @@ def get_data(page_url):
                 findex+=1
             
             #EventData
+            #
+            #
+            #if raw time is not a float change to 'N/A' for pax time diff succesor diff from first etc
+            #
+            #
             #Run Data
             class_name = raw_data_list[index][2]
             car_num = raw_data_list[index][3]
